@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "symbion-latp"
+version = "1.1.0"
+description = "LUYS-ANTI-TOXIN PROTOCOL v1.1 (LATP core module)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["symbion*"]

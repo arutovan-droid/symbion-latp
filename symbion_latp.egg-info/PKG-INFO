@@ -1,0 +1,349 @@
+Metadata-Version: 2.4
+Name: symbion-latp
+Version: 1.1.0
+Summary: LUYS-ANTI-TOXIN PROTOCOL v1.1 (LATP core module)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+\# LATP v1.1 — LUYS-ANTI-TOXIN PROTOCOL
+
+
+
+LATP (Luys Anti-Toxin Protocol) is a \*\*cooling and context-rotation layer\*\* for LLMs.  
+
+It sits between the user and the model and prevents \*\*context poisoning\*\* in long-running sessions.
+
+
+
+This repo contains the \*\*core LATP v1.1 implementation\*\* plus the RFC spec.
+
+
+
+---
+
+
+
+\## What is “Context Poisoning”?
+
+
+
+In long chats, especially when the context window is heavily used (>60%), LLMs tend to degrade:
+
+
+
+1\. \*\*Semantic Saturation\*\*  
+
+&nbsp;  Repetitive phrasing, reduced lexical diversity, answers become smooth but shallow.
+
+
+
+2\. \*\*Compression Hallucination\*\*  
+
+&nbsp;  Facts and structure get “flattened”, chapters are mixed, complex ideas are oversimplified.
+
+
+
+3\. \*\*Anchor Drift\*\*  
+
+&nbsp;  Recent messages override the System Prompt and base instructions. External knowledge is ignored.
+
+
+
+4\. \*\*Resonant Collapse\*\* \*(new in v1.1)\*  
+
+&nbsp;  The model generates answers that sound great to itself — symmetrical, elegant, but false.  
+
+&nbsp;  This is self-hypnosis of patterns, not just random hallucination.
+
+
+
+LATP is designed to detect and mitigate all four.
+
+
+
+---
+
+
+
+\## Core Modules (A–D)
+
+
+
+LATP v1.1 consists of four modules:
+
+
+
+\### A. Airlock Module
+
+
+
+> “One chapter — one chat.”
+
+
+
+\- Distills a long, messy history into a \*\*Crystal\*\* (compressed semantic state).
+
+\- Produces a \*\*clean context\*\* for the model:
+
+&nbsp; - System Prompt
+
+&nbsp; - `\[LATP Crystal]` system tag
+
+&nbsp; - Last user question
+
+
+
+\### B. Lateral Shift Engine
+
+
+
+> Cognitive sorbet.
+
+
+
+\- Detects looping / stagnation.
+
+\- Uses Librarium to find \*\*isomorphic topics\*\* (same structure, different domain).
+
+\- Injects a \*\*bridge question\*\* to wake the model up and shift perspective.
+
+
+
+\### C. Watchdog Module
+
+
+
+> External conscience.
+
+
+
+\- Checks every answer for:
+
+&nbsp; - \*\*Sultan Index\*\* (fluff / clichés / moralizing),
+
+&nbsp; - \*\*Fidelity to Crystal\*\* (is the answer grounded in core theses?),
+
+&nbsp; - \*\*Resonance\*\* (self-similarity → self-hypnosis risk).
+
+\- Can block, warn, or allow answers.
+
+
+
+\### D. Dissonance Probe \*(v1.1)\*
+
+
+
+> Breaks self-hypnosis.
+
+
+
+\- Forces the model into a \*\*critic role\*\* against its own answer.
+
+\- Asks it to:
+
+&nbsp; 1. Find the most questionable claim.
+
+&nbsp; 2. Produce a \*\*wedge question\*\* that could falsify it.
+
+\- Used when resonant collapse is detected.
+
+
+
+---
+
+
+
+\## Metrics
+
+
+
+LATP exposes a monitoring layer (conceptually `LATP\_Monitor`) to track system health:
+
+
+
+\- `session\_duration` — how many turns before Airlock has to reset.
+
+\- `toxicity\_peaks` — maximum toxicity levels across sessions.
+
+\- `crystal\_hits` — how often Crystal + Airlock saved a dialogue.
+
+\- `lateral\_success` — how often lateral shifts actually helped.
+
+\- `watchdog\_blocks` — how many answers were blocked.
+
+
+
+From these, a \*\*health score\*\* in `\[0.0, 1.0]` can be computed.  
+
+Target for production scenarios: `health\_score > 0.85` for long sessions (1000+ turns).
+
+
+
+---
+
+
+
+\## Installation (dev mode)
+
+
+
+```bash
+
+pip install -e .
+
+Requires Python 3.10+.
+
+
+
+Quick Start
+
+Minimal example using the built-in fake model and fake Librarium:
+
+
+
+python
+
+Копировать код
+
+from symbion.latp\_core import LATP\_WrappedEngine, FakeModel, FakeLibrarium
+
+
+
+engine = LATP\_WrappedEngine(FakeModel(), FakeLibrarium())
+
+
+
+history = \[
+
+&nbsp;   {"role": "user", "content": "2+2?", "tokens": 4},
+
+]
+
+
+
+answer = engine.generate(history)
+
+print(answer)
+
+In a real system you would:
+
+
+
+replace FakeModel with an adapter for your LLM (OpenAI, Anthropic, local, etc.),
+
+
+
+replace FakeLibrarium with a real knowledge store (DB / vector DB).
+
+
+
+Code Structure
+
+symbion/latp\_core.py
+
+Core LATP v1.1 implementation:
+
+
+
+Crystal
+
+
+
+ContextPoisoningScorer
+
+
+
+AirlockModule
+
+
+
+LateralShiftEngine
+
+
+
+WatchdogModule
+
+
+
+DissonanceProbe
+
+
+
+LATP\_WrappedEngine
+
+
+
+FakeModel / FakeLibrarium (for tests and examples)
+
+
+
+symbion/rfc/RFC-0001-LATP-v1.1.md
+
+Full RFC spec: diagnosis, modules A–D, metrics, and philosophy.
+
+
+
+tests/test\_latp\_v11.py
+
+Basic pytest smoke tests.
+
+
+
+Philosophy
+
+LATP is built on a few simple but strict beliefs:
+
+
+
+The model is a reactor, not a friend.
+
+It must be cooled, monitored, and occasionally rotated — not trusted blindly.
+
+
+
+Context is not memory.
+
+Raw chat history is expendable.
+
+Memory lives in Crystal and Librarium under OS control.
+
+
+
+Rotation and dissonance are normal.
+
+
+
+Context resets (Airlock),
+
+
+
+lateral shifts,
+
+
+
+watchdog blocks,
+
+
+
+REM-like “hypothesis mode”,
+
+
+
+dissonance probes
+
+— all are first-class citizens, not rare exceptions.
+
+
+
+Endless dialogue is only possible with strict hygiene.
+
+The model may forget you as a “chat partner”,
+
+but it must not forget the truth injected via Librarium and Crystal before every answer.
+
+
+
+RFC
+
+See: rfc/RFC-0001-LATP-v1.1.md
+
