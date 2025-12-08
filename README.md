@@ -337,7 +337,9 @@ but it must not forget the truth injected via Librarium and Crystal before every
 
 
 
-RFC
+## RFCs
 
-See: rfc/RFC-0001-LATP-v1.1.md
+- [`RFC-0001-LATP-v1.1.md`](symbion/rfc/RFC-0001-LATP-v1.1.md) — LUYS-ANTI-TOXIN PROTOCOL (context hygiene).
+- [`RFC-0002-SYMBION-RELAY-v1.0.md`](symbion/rfc/RFC-0002-SYMBION-RELAY-v1.0.md) — multi-engine relay / guard rotation.
+
 
