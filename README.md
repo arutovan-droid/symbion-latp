@@ -1,7 +1,4 @@
 
-
-# symbion-latp
-=======
 \# LATP v1.1 — LUYS-ANTI-TOXIN PROTOCOL
 
 
