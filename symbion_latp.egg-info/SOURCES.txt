@@ -1,9 +1,0 @@
-README.md
-pyproject.toml
-symbion/__init__.py
-symbion/latp_core.py
-symbion_latp.egg-info/PKG-INFO
-symbion_latp.egg-info/SOURCES.txt
-symbion_latp.egg-info/dependency_links.txt
-symbion_latp.egg-info/top_level.txt
-tests/test_latp_v11.py
