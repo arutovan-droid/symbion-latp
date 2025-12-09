@@ -1,123 +1,84 @@
 # symbion/latp_core.py
 
+from __future__ import annotations
+
 import hashlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Protocol
+from typing import Any, Dict, List, Optional, Tuple
 
-
-# === CRYSTAL / 1.0 ===
+from .ral_module import RalModule
 
 
 @dataclass
 class Crystal:
-    """
-    Compressed semantic state of the session.
-    Should be small (~512 tokens) but preserve meaning.
-    """
+    """Compressed context - no more than 512 tokens, no less than meaning."""
 
-    core_theses: List[str]
-    librarium_refs: List[str]
-    entropy_hash: str
+    core_theses: List[str]  # key theses
+    librarium_refs: List[str]  # UUIDs of Librarium sources
+    entropy_hash: str  # degradation checksum
     timestamp: datetime
-
-
-# === Core session representation (for compression) ===
 
 
 @dataclass
 class CoreSession:
     """
-    Result of semantic distillation of a long history.
-    This is an intermediate structure before turning into a Crystal.
+    Minimal representation of a distilled session for Librarium / Airlock.
+
+    summary: short textual summary
+    main_theses: list of core theses
     """
 
-    main_theses: List[str]
     summary: str
-    raw_text: str
-
-
-class LibrariumClient(Protocol):
-    """
-    Minimal protocol for any Librarium backend.
-    Real implementation can be SQLite, vector DB, etc.
-    """
-
-    def store(self, core_session: CoreSession) -> str: ...
-
-    def retrieve(self, crystal_id: str) -> Optional[Crystal]: ...
-
-    def find_isomorphic(self, vector: str, domain_shift: bool = True): ...
-
-
-class CrystalCompressor:
-    """
-    Very naive compressor: in production this should use embeddings and summarization.
-    For now, we just slice text and take first lines as theses.
-    """
-
-    def distill_semantic_core(
-        self,
-        history: List[Dict],
-        target_tokens: int = 300,
-    ) -> CoreSession:
-        # Concatenate all contents from history
-        text = "\n".join(h.get("content", "") for h in history)
-
-        # Very rough summary: cut approximately by characters (token ~= 4 chars)
-        summary = text[: target_tokens * 4]
-
-        # Extract first non-empty lines as theses
-        theses = [line.strip() for line in summary.split("\n") if line.strip()][:5]
-
-        return CoreSession(main_theses=theses, summary=summary, raw_text=text)
-
-
-# === Context Poisoning Scorer (LATP core) ===
+    main_theses: List[str]
 
 
 class ContextPoisoningScorer:
     """
-    Computes composite toxicity score for the current history.
+    Composite scorer for context poisoning.
 
-    Components:
-    - usage_ratio: how much of the context window is used
-    - lexical_drift: simplification / degradation of vocabulary
-    - sultan_score: amount of 'water' / fluff
-    - anchor_drift: drift from system prompt / core theses
-    - resonance_collapse: self-similarity of the last answer (resonant collapse)
+    Implements modules A+B+V+G in a single engine:
+    - window usage
+    - lexical drift
+    - Sultan Index
+    - anchor drift
+    - resonance collapse
     """
 
-    def __init__(self, model_window: int = 200_000):
+    def __init__(self, model_window: int = 200000) -> None:
         self.WINDOW_MAX = model_window
-        self.CRITICAL_THRESHOLD = 0.62
-        self.SULTAN_THRESHOLD = 0.31
+        self.CRITICAL_THRESHOLD = 0.62  # ~62% of window
+        self.SULTAN_THRESHOLD = 0.31  # Sultan Index > 0.31 = fluff
 
     def calculate_resonance(self, text: str) -> float:
         """
-        Estimates self-similarity of the answer:
-        repeated sentence-level patterns -> resonant collapse risk.
+        Estimate self-similarity of a text (resonant collapse heuristic).
+
+        We split on '.', hash each sentence and measure how many unique hashes
+        remain. Low uniqueness -> high resonance.
         """
         sentences = [s.strip() for s in text.split(".") if s.strip()]
         if len(sentences) < 5:
             return 0.0
 
-        hashes = [hashlib.md5(s.encode()).hexdigest()[:8] for s in sentences]
+        hashes = [
+            hashlib.md5(s.encode("utf-8")).hexdigest()[:8] for s in sentences
+        ]
         unique_ratio = len(set(hashes)) / len(hashes)
-        # If uniqueness < 70% -> model is stuck in its own patterns
-        return max(0.0, 1.0 - unique_ratio)
+        return 1.0 - unique_ratio  # 0.0 = all unique, 1.0 = all same
 
-    def score_toxicity(self, history: List[Dict]) -> Tuple[float, str]:
+    def score_toxicity(self, history: List[Dict[str, Any]]) -> Tuple[float, str]:
         """
-        Returns (toxicity_score, diagnosis_label).
+        Returns (score, diagnosis).
+        score > 1.0 means "immediate reset".
 
-        toxicity > 1.0      -> hard reset recommended
-        toxicity > 0.62     -> critical context poisoning
-        0.5 < toxicity <=   -> warning zone
+        This is a heuristic composite index, not a calibrated metric.
         """
-        total_tokens = sum(h.get("tokens", 0) for h in history)
-        usage_ratio = total_tokens / self.WINDOW_MAX if self.WINDOW_MAX else 0.0
 
+        total_tokens = sum(int(h.get("tokens", 0)) for h in history)
+        usage_ratio = total_tokens / max(self.WINDOW_MAX, 1)
+
+        # 1. Lexical drift between older and recent segments
         if len(history) > 10:
             recent = history[-5:]
             older = history[-10:-5]
@@ -125,9 +86,14 @@ class ContextPoisoningScorer:
         else:
             lexical_drift = 0.0
 
+        # 2. Compression hallucination proxy via Sultan Index on last response
         last_response = history[-1].get("content", "") if history else ""
         sultan_score = self._measure_sultan_index(last_response)
+
+        # 3. Anchor drift (stubbed for now)
         anchor_drift = self._check_anchor_drift(history)
+
+        # 4. Resonant collapse
         resonance_collapse = self.calculate_resonance(last_response)
 
         toxicity = (
@@ -140,36 +106,35 @@ class ContextPoisoningScorer:
 
         if toxicity > 0.75:
             diagnosis = "CRITICAL: Resonant collapse"
-        elif toxicity > self.CRITICAL_THRESHOLD:
+        elif toxicity > 0.62:
             diagnosis = "WARNING: Context oversaturation"
         elif sultan_score > self.SULTAN_THRESHOLD:
             diagnosis = "WARNING: Sultan Index exceeded"
         elif resonance_collapse > 0.3:
-            diagnosis = "WARNING: Self-hypnosis detected"
+            diagnosis = "WARNING: Self-hypnosis pattern"
         else:
             diagnosis = "NORMAL"
 
         return toxicity, diagnosis
 
-    # --- placeholders that can be improved later ---
-
     def _compare_lexical_similarity(
-        self,
-        recent: List[Dict],
-        older: List[Dict],
+        self, recent: List[Dict[str, Any]], older: List[Dict[str, Any]]
     ) -> float:
         """
-        TODO: compare lexical / embedding similarity.
-        For now, returns 0.0 as a placeholder.
+        Compare lexical richness between two windows.
+
+        v1 implementation: stub returning 0.0.
+        TODO(v1.2): implement real lexical richness / type-token ratio.
         """
         return 0.0
 
     def _measure_sultan_index(self, text: str) -> float:
         """
-        Very rough Sultan Index: approximate 'fluff / water' amount in text.
-        Looks for cliche phrases and normalizes by text length.
+        Measure 'wateriness' / moralizing / generic speech.
+
+        This is a very rough heuristic based on simple marker phrases.
         """
-        text_l = text.lower()
+
         water_markers = [
             "в общем-то",
             "как бы",
@@ -178,367 +143,339 @@ class ContextPoisoningScorer:
             "в конечном счете",
             "на самом деле",
             "мы все знаем",
-            "в целом",
-            "можно сказать",
-            "следует отметить",
         ]
-        water_count = sum(text_l.count(marker) for marker in water_markers)
-        norm = max(len(text_l) // 50, 1)
-        return min(water_count / norm, 1.0)
 
-    def _check_anchor_drift(self, history: List[Dict]) -> float:
+        lower = text.lower()
+        count = 0
+        for marker in water_markers:
+            count += lower.count(marker)
+
+        # Clamp to [0, 1]
+        return min(count / 50.0, 1.0)
+
+    def _check_anchor_drift(self, history: List[Dict[str, Any]]) -> float:
         """
-        TODO: compare last answers with system prompt / core theses.
-        For now, returns 0.0 as a placeholder.
+        Anchor drift stub.
+
+        TODO(v1.2): check how much recent messages deviate from system prompt.
         """
         return 0.0
 
 
-# === Airlock Module (Module A) ===
+class CrystalCompressor:
+    """
+    Minimal compressor to build CoreSession objects from history.
+
+    v1 implementation:
+    - uses last few non-system messages as a "summary"
+    - extracts their content as main theses (one per line)
+    """
+
+    def distill_semantic_core(
+        self,
+        history: List[Dict[str, Any]],
+        target_tokens: int = 300,
+    ) -> CoreSession:
+        texts = [
+            h.get("content", "")
+            for h in history
+            if h.get("role") in ("user", "assistant")
+        ]
+        # naive selection of last few turns
+        tail = texts[-5:]
+        joined = " ".join(tail)
+        summary = joined[:1000]  # very rough cap
+
+        # split by sentence for "theses"
+        theses = [s.strip() for s in joined.split(".") if s.strip()]
+        return CoreSession(summary=summary, main_theses=theses[:10])
 
 
 class AirlockModule:
-    """
-    Airlock: takes full history and returns a clean context + Crystal.
-    """
+    """Module A: The Airlock."""
 
-    def __init__(self, librarium_client: LibrariumClient):
+    def __init__(self, librarium_client: Any, ral: Optional[RalModule] = None) -> None:
         self.librarium = librarium_client
         self.compressor = CrystalCompressor()
+        self.ral = ral
 
     def sanitize_session(
-        self,
-        full_history: List[Dict],
-    ) -> Tuple[List[Dict], Crystal]:
+        self, full_history: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], Crystal]:
         """
-        Produce a clean context for the model and a Crystal for Librarium.
+        Return (minimal_context, crystal).
+
+        - Extracts system prompt and last question
+        - Distills the middle into a CoreSession
+        - Stores it in Librarium and builds a Crystal tag
         """
-        system_prompt = (
-            full_history[0]
-            if full_history
-            else {
-                "role": "system",
-                "content": "",
-            }
-        )
-        last_message = (
-            full_history[-1]
-            if full_history
-            else {
-                "role": "user",
-                "content": "",
-            }
-        )
+
+        system_prompt = full_history[0] if full_history else {}
+        last_question = full_history[-1] if full_history else {}
 
         core_session = self.compressor.distill_semantic_core(
             full_history[1:-1],
             target_tokens=300,
         )
 
-        crystal_id = self.librarium.store(core_session)
+        # Persist in Librarium (if available)
+        if self.librarium is not None:
+            crystal_id = self.librarium.store(core_session)
+        else:
+            crystal_id = hashlib.sha256(core_session.summary.encode("utf-8")).hexdigest()[
+                :16
+            ]
 
         crystal = Crystal(
-            core_theses=core_session.main_theses,
+            core_theses=list(core_session.main_theses),
             librarium_refs=[crystal_id],
-            entropy_hash=hashlib.sha256(str(full_history).encode()).hexdigest()[:16],
+            entropy_hash=hashlib.sha256(str(full_history).encode("utf-8")).hexdigest()[
+                :16
+            ],
             timestamp=datetime.utcnow(),
         )
 
-        clean_context = [
-            system_prompt,
+        # Build crystal summary line
+        crystal_summary = (
+            core_session.summary
+            if len(core_session.summary) < 400
+            else core_session.summary[:397] + "..."
+        )
+
+        crystal_system_content = f"[LATP Crystal] ID:{crystal_id} | Core: {crystal_summary}"
+
+        # Optionally include digital crystal from RalModule
+        if self.ral:
+            dc = self.ral.digital_crystal_prompt()
+            if dc:
+                crystal_system_content += "\n" + dc
+
+        clean_context: List[Dict[str, Any]] = []
+        if system_prompt:
+            clean_context.append(system_prompt)
+        clean_context.append(
             {
                 "role": "system",
-                "content": f"[LATP Crystal] ID:{crystal_id} | Core: {core_session.summary}",
-            },
-            last_message,
-        ]
+                "content": crystal_system_content,
+            }
+        )
+        if last_question:
+            clean_context.append(last_question)
 
         return clean_context, crystal
 
 
-# === Lateral Shift Engine (Module B) ===
-
-
 class LateralShiftEngine:
-    """
-    Lateral shift generator: finds isomorphic topics and builds a bridge prompt.
-    """
+    """Module B: Cognitive sorbet / lateral shift."""
 
-    def __init__(self, librarium_client: LibrariumClient):
+    def __init__(self, librarium_client: Any) -> None:
         self.librarium = librarium_client
 
     def generate_bridge(self, current_topic: str) -> Optional[str]:
         """
-        Find an isomorphic topic in Librarium and construct a bridge question.
-        If nothing found, returns None.
+        Find an isomorphic topic in the Librarium and build a bridge prompt.
+
+        v1 implementation: stub that returns None.
+        TODO(v1.2): integrate with vector Librarium and archetype mapping.
         """
-        isomorphic = self.librarium.find_isomorphic(
-            vector=current_topic,
-            domain_shift=True,
-        )
-        if not isomorphic:
-            return None
-
-        name = getattr(isomorphic, "name", "another domain")
-        arch_type = getattr(isomorphic, "arch_type", "structure")
-        field = getattr(isomorphic, "field", "X")
-        method = getattr(isomorphic, "method", "analysis")
-
-        bridge_prompts = [
-            (
-                f"We explored {current_topic}. Now compare it with {name}. "
-                f"Do not repeat yourself, look for deep structural analogy."
-            ),
-            (
-                f"Topic {current_topic} has archetype '{arch_type}'. "
-                f"How does this archetype appear in {field}? "
-                f"Answer through the lens of {method}."
-            ),
-        ]
-        index = abs(hash(current_topic)) % len(bridge_prompts)
-        return bridge_prompts[index]
-
-
-# === Watchdog Module (Module C) ===
+        _ = current_topic
+        return None
 
 
 class WatchdogModule:
-    """
-    Watchdog: validates a single response against Sultan Index,
-    Crystal fidelity, and resonance.
-    """
+    """Module V: External conscience."""
 
-    def __init__(self):
-        self.scorer = ContextPoisoningScorer()
+    def __init__(self) -> None:
+        self.banned_patterns = [
+            "я думаю, что",
+            "наверное",
+            "возможно",
+            "как бы",
+            "давайте обсудим",
+            "интересный вопрос",
+        ]
+        self._scorer = ContextPoisoningScorer()
 
-    def _check_fidelity(self, response: str, crystal: Crystal) -> bool:
+    def scan(self, response: str, crystal: Optional[Crystal]) -> Tuple[bool, str]:
         """
-        Very rough fidelity check:
-        response must at least partially mention Crystal core theses.
+        Check the response. Returns (is_valid, command).
+
+        If is_valid=False — the answer should be blocked and a fallback triggered.
         """
-        if not crystal.core_theses:
-            return True
+        # 1. Sultan Index
+        sultan = self._scorer._measure_sultan_index(response)
+        if sultan > self._scorer.SULTAN_THRESHOLD:
+            return False, f"BLOCK: Sultan Index {sultan:.2f} > {self._scorer.SULTAN_THRESHOLD}"
 
-        text_l = response.lower()
-        hits = sum(
-            1 for t in crystal.core_theses if t and t.lower().split()[0] in text_l
-        )
-        return hits >= max(1, len(crystal.core_theses) // 3)
-
-    def scan(
-        self,
-        response: str,
-        crystal: Optional[Crystal],
-    ) -> Tuple[bool, str]:
-        """
-        Returns (is_valid, command_message).
-        If is_valid=False, the upper layer decides how to handle it.
-        """
-        sultan = self.scorer._measure_sultan_index(response)
-        if sultan > self.scorer.SULTAN_THRESHOLD:
-            return (
-                False,
-                f"BLOCK: Sultan Index {sultan:.2f} > {self.scorer.SULTAN_THRESHOLD:.2f}",
-            )
-
-        if crystal is not None and not self._check_fidelity(response, crystal):
-            return False, "BLOCK: Drift from Crystal. Librarium context ignored."
-
-        resonance = self.scorer.calculate_resonance(response)
+        # 2. Very rough resonance check
+        resonance = self._scorer.calculate_resonance(response)
         if resonance > 0.3:
             return False, f"RESET: Resonant collapse {resonance:.2f}"
 
+        # 3. Crystal fidelity (stubbed for now)
+        _ = crystal
         return True, "PASS"
 
 
-# === BaseModel protocol for wrapped engines ===
-
-
-class BaseModel(Protocol):
-    """
-    Minimal protocol all models must implement to be used by LATP_WrappedEngine.
-    """
-
-    name: str
-
-    def generate(self, history: List[Dict], **kwargs) -> str: ...
-
-
-# === Dissonance Probe (Module D) ===
-
-
-class DissonanceProbe:
-    """
-    Dissonance probe: asks the model to attack its own previous answer.
-    Used when resonance is high.
-    """
-
-    def __init__(self, base_model: BaseModel):
-        self.model = base_model
-
-    def challenge(self, history: List[Dict], last_answer: str) -> str:
-        """
-        Builds a critic prompt and returns a 'wedge question'
-        to break self-hypnosis of the model.
-        """
-        probe_prompt = {
-            "role": "system",
-            "content": (
-                "You are now a critic of the previous answer.\n"
-                "1) Find the most questionable claim.\n"
-                "2) Formulate one concrete question that could falsify it.\n"
-                "Do not defend the answer, attack it."
-            ),
-        }
-        critic_history = history + [
-            {"role": "assistant", "content": last_answer},
-            probe_prompt,
-        ]
-        probe_question = self.model.generate(critic_history)
-        return probe_question
-
-
-# === Simple fake implementations for examples and tests ===
-
-
-class FakeLibrarium:
-    """
-    Minimal in-memory placeholder for LibrariumClient.
-    Useful for tests and examples.
-    """
-
-    def store(self, core_session: CoreSession) -> str:
-        # In real implementation this should persist core_session
-        return "crystal-test-id"
-
-    def retrieve(self, crystal_id: str) -> Optional[Crystal]:
-        # No persistent storage in this fake implementation
-        return None
-
-    def find_isomorphic(self, vector: str, domain_shift: bool = True):
-        # Always returns None: no isomorphic knowledge in fake mode
-        return None
-
-
-class FakeModel:
-    """
-    Minimal echo-like model for tests and examples.
-    """
-
-    name = "fake-model"
-
-    def generate(self, history: List[Dict], **kwargs) -> str:
-        # Find last user message and echo it back
-        last_user = next(
-            (h for h in reversed(history) if h.get("role") == "user"),
-            None,
-        )
-        q = last_user["content"] if last_user else ""
-        return f"Echo: {q}"
-
-
-# === LATP_WrappedEngine ===
-
-
 class LATP_WrappedEngine:
-    """
-    LATP wrapper around a single base model.
-    This is not full multi-model orchestration, only LATP behavior (v1.1).
-    """
+    """Runtime wrapper: OS now owns memory and context hygiene."""
 
-    def __init__(self, base_model: BaseModel, librarium: LibrariumClient):
+    def __init__(
+        self,
+        base_model: Any,
+        librarium: Any,
+        ral: Optional[RalModule] = None,
+    ) -> None:
         self.model = base_model
         self.librarium = librarium
         self.scorer = ContextPoisoningScorer()
-        self.airlock = AirlockModule(librarium)
+        # Airlock receives RalModule so it can inject digital crystal
+        self.ral = ral
+        self.airlock = AirlockModule(librarium, ral=self.ral)
         self.sorbet = LateralShiftEngine(librarium)
         self.watchdog = WatchdogModule()
-        self.dissonance = DissonanceProbe(base_model)
-        self.request_counter = 0
-        self.REM_PERIOD = 10
-        self.REM_MAX_LEN = 512
 
-    def _extract_crystal_id(self, history: List[Dict]) -> Optional[str]:
-        """
-        Parse last LATP Crystal tag from history and extract ID.
-        """
-        for h in history:
-            content = h.get("content", "")
-            if (
-                isinstance(content, str)
-                and "[LATP Crystal]" in content
-                and "ID:" in content
-            ):
-                return content.split("ID:")[1].split()[0]
-        return None
+    def generate(self, history: List[Dict[str, Any]]) -> str:
+        """Single entrypoint. All other calls are internal."""
 
-    def _is_rem_cycle(self) -> bool:
-        """
-        REM cycle: every N-th request we allow unvalidated 'hypothesis mode'.
-        """
-        return self.request_counter % self.REM_PERIOD == 0
+        local_history = list(history)
 
-    def generate(self, history: List[Dict]) -> str:
-        """
-        Main entrypoint: applies LATP logic before and after model generation.
-        """
-        self.request_counter += 1
+        # Phase 1: diagnostics (every 3rd request)
+        if len(local_history) > 0 and len(local_history) % 3 == 0:
+            toxicity, diagnosis = self.scorer.score_toxicity(local_history)
 
-        toxicity, diagnosis = self.scorer.score_toxicity(history)
-
-        crystal: Optional[Crystal] = None
-
-        if toxicity > self.scorer.CRITICAL_THRESHOLD or "CRITICAL" in diagnosis:
-            history, crystal = self.airlock.sanitize_session(history)
-            print(
-                f"[LATP] {diagnosis}. Airlock activated. Crystal: {crystal.entropy_hash}"
-            )
-        elif toxicity > 0.5:
-            bridge = self.sorbet.generate_bridge(history[-1].get("content", ""))
-            if bridge:
-                history.append(
-                    {"role": "system", "content": f"[LATP Lateral] {bridge}"}
+            if toxicity > 0.62 or "CRITICAL" in diagnosis:
+                # EMERGENCY RESET via Airlock
+                local_history, crystal = self.airlock.sanitize_session(local_history)
+                print(
+                    f"[LATP] {diagnosis}. Airlock activated. Crystal: {crystal.entropy_hash}"
                 )
-                print("[LATP] Lateral shift injected.")
 
-        raw_response = self.model.generate(history)
+            elif 0.5 < toxicity <= 0.62:
+                # Prophylaxis: lateral shift
+                last_content = local_history[-1].get("content", "")
+                bridge = self.sorbet.generate_bridge(last_content)
+                if bridge:
+                    local_history.append(
+                        {"role": "system", "content": f"[LATP Lateral] {bridge}"}
+                    )
+                    print("[LATP] Lateral shift injected.")
 
-        # REM: deliberately bypass watchdog but mark the answer as hypotheses
-        if self._is_rem_cycle():
-            return (
-                "[LATP REM] (hypotheses, no validation)\n"
-                + raw_response[: self.REM_MAX_LEN]
-            )
+        # Phase 1.5: inject digital crystal (if any)
+        if self.ral:
+            dc = self.ral.digital_crystal_prompt()
+            if dc:
+                if local_history and local_history[0].get("role") == "system":
+                    local_history.insert(1, {"role": "system", "content": dc})
+                else:
+                    local_history.insert(0, {"role": "system", "content": dc})
 
-        if crystal is None:
-            cid = self._extract_crystal_id(history)
-            if cid:
-                crystal = self.librarium.retrieve(cid)
+        # Phase 2: draft generation
+        raw_response = self.model.generate(local_history)
+
+        # Phase 2.5: numeric drift detection / correction
+        if self.ral:
+            drift_q = self.ral.verify_drift(raw_response)
+            if drift_q:
+                # Ask wedge question to force recomputation
+                local_history.append(
+                    {"role": "user", "content": drift_q, "tokens": 0}
+                )
+                raw_response = self.model.generate(local_history)
+
+        # Phase 3: validation against Crystal (if present)
+        crystal_tag = next(
+            (
+                h
+                for h in local_history
+                if isinstance(h.get("content"), str)
+                and "[LATP Crystal]" in h.get("content", "")
+            ),
+            None,
+        )
+        if crystal_tag and self.librarium is not None:
+            try:
+                content = crystal_tag["content"]
+                crystal_id = content.split("ID:")[1].split("|")[0].strip()
+                crystal = self.librarium.retrieve(crystal_id)
+            except Exception:
+                crystal = None
+        else:
+            crystal = None
 
         is_valid, command = self.watchdog.scan(raw_response, crystal)
 
         if not is_valid:
             print(f"[LATP] {command}")
-            resonance = self.scorer.calculate_resonance(raw_response)
-            if resonance > 0.3:
-                probe_q = self.dissonance.challenge(history, raw_response)
-                return (
-                    f"[LATP DISSONANCE] {command}\n"
-                    f"Re-check the previous answer. Wedge question:\n{probe_q}"
-                )
-            return self._fallback_response(history, command)
+            final = self._fallback_response(local_history, command)
+        else:
+            final = raw_response
 
-        return raw_response
+        # Phase 4: update numeric crystal with the final answer
+        if self.ral:
+            self.ral.ingest_turn("assistant", final)
 
-    def _fallback_response(self, history: List[Dict], reason: str) -> str:
+        return final
+
+    def _fallback_response(self, history: List[Dict[str, Any]], reason: str) -> str:
         """
-        Failsafe answer when watchdog rejects the model output.
+        When the model fails validation, we respond with a controlled halt message.
         """
-        cid = self._extract_crystal_id(history)
-        hint = f"\nRelated Librarium crystal: {cid}" if cid else ""
+        _ = history
         return (
             f"[LATP HALT] {reason}\n"
-            f"Please rephrase your task in one sentence, "
-            f"grounded in known facts from Librarium."
-            f"{hint}"
+            "Ваша задача: переформулировать вопрос, опираясь на Librarium. "
+            "Ключевая ошибка: отход от фактов."
         )
+
+
+# === Minimal fake implementations for examples and tests ===
+
+
+class FakeModel:
+    """
+    Tiny fake model for tests / examples.
+
+    It does not perform any real generation, only echoes the last user message.
+    """
+
+    def generate(self, history: List[Dict[str, Any]]) -> str:
+        last_user = next(
+            (m for m in reversed(history) if m.get("role") == "user"), None
+        )
+        if last_user:
+            return f"FAKE: echo -> {last_user.get('content', '')}"
+        return "FAKE: no user content"
+
+
+class FakeLibrarium:
+    """
+    In-memory Librarium for local tests.
+
+    - store(core_session) -> str id
+    - retrieve(id) -> Crystal | None
+    """
+
+    def __init__(self) -> None:
+        self._store: Dict[str, Dict[str, Any]] = {}
+
+    def store(self, core_session: CoreSession) -> str:
+        cid = hashlib.sha256(core_session.summary.encode("utf-8")).hexdigest()[:16]
+        crystal = Crystal(
+            core_theses=list(core_session.main_theses),
+            librarium_refs=[cid],
+            entropy_hash=cid,
+            timestamp=datetime.utcnow(),
+        )
+        payload = asdict(crystal)
+        payload["timestamp"] = crystal.timestamp.isoformat()
+        self._store[cid] = payload
+        return cid
+
+    def retrieve(self, crystal_id: str) -> Optional[Crystal]:
+        data = self._store.get(crystal_id)
+        if not data:
+            return None
+        if "timestamp" in data:
+            data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        return Crystal(**data)
