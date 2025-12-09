@@ -342,4 +342,39 @@ but it must not forget the truth injected via Librarium and Crystal before every
 - [`RFC-0001-LATP-v1.1.md`](symbion/rfc/RFC-0001-LATP-v1.1.md) — LUYS-ANTI-TOXIN PROTOCOL (context hygiene).
 - [`RFC-0002-SYMBION-RELAY-v1.0.md`](symbion/rfc/RFC-0002-SYMBION-RELAY-v1.0.md) — multi-engine relay / guard rotation.
 
+## LATP Locks
+
+For presentation / analysis-only sessions you can import:
+
+```python
+from symbion.locks import LATP_PRESENTATION_LOCK
+
+print(LATP_PRESENTATION_LOCK)
+# "[LATP-LOCK: PRESENTATION MODE] Пользователь — архитектор. ..."
+This lock is a protocol hint for higher-level runtimes:
+do not edit or “improve” the artefact, only analyse and resonate with it.
+
+python
+Копировать код
+
+### 1.2. Блок про SQLiteLibrarium
+
+```markdown
+## Librarium (SQLite, minimal)
+
+A minimal persistent Librarium is provided:
+
+```python
+from symbion.librarium import SQLiteLibrarium
+from symbion.latp_core import LATP_WrappedEngine, FakeModel
+
+librarium = SQLiteLibrarium("librarium.db")
+engine = LATP_WrappedEngine(FakeModel(), librarium=librarium)
+
+history = [{"role": "user", "content": "2+2?"}]
+answer = engine.generate(history)
+print(answer)
+This makes LATP executable with a real storage backend, not just in-memory mocks.
+
+
 
