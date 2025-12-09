@@ -1,5 +1,10 @@
 import pytest
-from symbion.latp_core import ContextPoisoningScorer, LATP_WrappedEngine, FakeModel, FakeLibrarium
+from symbion.latp_core import (
+    ContextPoisoningScorer,
+    LATP_WrappedEngine,
+    FakeModel,
+    FakeLibrarium,
+)
 
 
 def test_scorer_normal():
@@ -22,3 +27,11 @@ def test_latp_engine_basic():
     answer = engine.generate(history)
     assert isinstance(answer, str)
     assert "Hello, LATP!" in answer
+
+
+def test_rem_cycle_bypasses_watchdog():
+    """REM cycle should eventually bypass the watchdog once REM flag is implemented."""
+    # TODO: when REM becomes a runtime flag on LATP_WrappedEngine,
+    #       this test should assert that responses are returned even
+    #       if the watchdog would normally block them.
+    pass

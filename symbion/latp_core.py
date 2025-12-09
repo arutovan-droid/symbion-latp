@@ -8,12 +8,14 @@ from typing import List, Dict, Optional, Tuple, Protocol
 
 # === CRYSTAL / 1.0 ===
 
+
 @dataclass
 class Crystal:
     """
     Compressed semantic state of the session.
     Should be small (~512 tokens) but preserve meaning.
     """
+
     core_theses: List[str]
     librarium_refs: List[str]
     entropy_hash: str
@@ -22,12 +24,14 @@ class Crystal:
 
 # === Core session representation (for compression) ===
 
+
 @dataclass
 class CoreSession:
     """
     Result of semantic distillation of a long history.
     This is an intermediate structure before turning into a Crystal.
     """
+
     main_theses: List[str]
     summary: str
     raw_text: str
@@ -38,14 +42,12 @@ class LibrariumClient(Protocol):
     Minimal protocol for any Librarium backend.
     Real implementation can be SQLite, vector DB, etc.
     """
-    def store(self, core_session: CoreSession) -> str:
-        ...
 
-    def retrieve(self, crystal_id: str) -> Optional[Crystal]:
-        ...
+    def store(self, core_session: CoreSession) -> str: ...
 
-    def find_isomorphic(self, vector: str, domain_shift: bool = True):
-        ...
+    def retrieve(self, crystal_id: str) -> Optional[Crystal]: ...
+
+    def find_isomorphic(self, vector: str, domain_shift: bool = True): ...
 
 
 class CrystalCompressor:
@@ -66,16 +68,13 @@ class CrystalCompressor:
         summary = text[: target_tokens * 4]
 
         # Extract first non-empty lines as theses
-        theses = [
-            line.strip()
-            for line in summary.split("\n")
-            if line.strip()
-        ][:5]
+        theses = [line.strip() for line in summary.split("\n") if line.strip()][:5]
 
         return CoreSession(main_theses=theses, summary=summary, raw_text=text)
 
 
 # === Context Poisoning Scorer (LATP core) ===
+
 
 class ContextPoisoningScorer:
     """
@@ -132,11 +131,11 @@ class ContextPoisoningScorer:
         resonance_collapse = self.calculate_resonance(last_response)
 
         toxicity = (
-            usage_ratio * 0.4 +
-            lexical_drift * 0.2 +
-            sultan_score * 0.2 +
-            anchor_drift * 0.1 +
-            resonance_collapse * 0.1
+            usage_ratio * 0.4
+            + lexical_drift * 0.2
+            + sultan_score * 0.2
+            + anchor_drift * 0.1
+            + resonance_collapse * 0.1
         )
 
         if toxicity > 0.75:
@@ -197,6 +196,7 @@ class ContextPoisoningScorer:
 
 # === Airlock Module (Module A) ===
 
+
 class AirlockModule:
     """
     Airlock: takes full history and returns a clean context + Crystal.
@@ -213,14 +213,22 @@ class AirlockModule:
         """
         Produce a clean context for the model and a Crystal for Librarium.
         """
-        system_prompt = full_history[0] if full_history else {
-            "role": "system",
-            "content": "",
-        }
-        last_message = full_history[-1] if full_history else {
-            "role": "user",
-            "content": "",
-        }
+        system_prompt = (
+            full_history[0]
+            if full_history
+            else {
+                "role": "system",
+                "content": "",
+            }
+        )
+        last_message = (
+            full_history[-1]
+            if full_history
+            else {
+                "role": "user",
+                "content": "",
+            }
+        )
 
         core_session = self.compressor.distill_semantic_core(
             full_history[1:-1],
@@ -249,6 +257,7 @@ class AirlockModule:
 
 
 # === Lateral Shift Engine (Module B) ===
+
 
 class LateralShiftEngine:
     """
@@ -292,6 +301,7 @@ class LateralShiftEngine:
 
 # === Watchdog Module (Module C) ===
 
+
 class WatchdogModule:
     """
     Watchdog: validates a single response against Sultan Index,
@@ -311,9 +321,7 @@ class WatchdogModule:
 
         text_l = response.lower()
         hits = sum(
-            1
-            for t in crystal.core_theses
-            if t and t.lower().split()[0] in text_l
+            1 for t in crystal.core_theses if t and t.lower().split()[0] in text_l
         )
         return hits >= max(1, len(crystal.core_theses) // 3)
 
@@ -328,7 +336,10 @@ class WatchdogModule:
         """
         sultan = self.scorer._measure_sultan_index(response)
         if sultan > self.scorer.SULTAN_THRESHOLD:
-            return False, f"BLOCK: Sultan Index {sultan:.2f} > {self.scorer.SULTAN_THRESHOLD:.2f}"
+            return (
+                False,
+                f"BLOCK: Sultan Index {sultan:.2f} > {self.scorer.SULTAN_THRESHOLD:.2f}",
+            )
 
         if crystal is not None and not self._check_fidelity(response, crystal):
             return False, "BLOCK: Drift from Crystal. Librarium context ignored."
@@ -342,6 +353,7 @@ class WatchdogModule:
 
 # === BaseModel protocol for wrapped engines ===
 
+
 class BaseModel(Protocol):
     """
     Minimal protocol all models must implement to be used by LATP_WrappedEngine.
@@ -349,11 +361,11 @@ class BaseModel(Protocol):
 
     name: str
 
-    def generate(self, history: List[Dict], **kwargs) -> str:
-        ...
+    def generate(self, history: List[Dict], **kwargs) -> str: ...
 
 
 # === Dissonance Probe (Module D) ===
+
 
 class DissonanceProbe:
     """
@@ -387,6 +399,7 @@ class DissonanceProbe:
 
 
 # === Simple fake implementations for examples and tests ===
+
 
 class FakeLibrarium:
     """
@@ -426,6 +439,7 @@ class FakeModel:
 
 # === LATP_WrappedEngine ===
 
+
 class LATP_WrappedEngine:
     """
     LATP wrapper around a single base model.
@@ -450,7 +464,11 @@ class LATP_WrappedEngine:
         """
         for h in history:
             content = h.get("content", "")
-            if isinstance(content, str) and "[LATP Crystal]" in content and "ID:" in content:
+            if (
+                isinstance(content, str)
+                and "[LATP Crystal]" in content
+                and "ID:" in content
+            ):
                 return content.split("ID:")[1].split()[0]
         return None
 
@@ -472,18 +490,25 @@ class LATP_WrappedEngine:
 
         if toxicity > self.scorer.CRITICAL_THRESHOLD or "CRITICAL" in diagnosis:
             history, crystal = self.airlock.sanitize_session(history)
-            print(f"[LATP] {diagnosis}. Airlock activated. Crystal: {crystal.entropy_hash}")
+            print(
+                f"[LATP] {diagnosis}. Airlock activated. Crystal: {crystal.entropy_hash}"
+            )
         elif toxicity > 0.5:
             bridge = self.sorbet.generate_bridge(history[-1].get("content", ""))
             if bridge:
-                history.append({"role": "system", "content": f"[LATP Lateral] {bridge}"})
+                history.append(
+                    {"role": "system", "content": f"[LATP Lateral] {bridge}"}
+                )
                 print("[LATP] Lateral shift injected.")
 
         raw_response = self.model.generate(history)
 
         # REM: deliberately bypass watchdog but mark the answer as hypotheses
         if self._is_rem_cycle():
-            return "[LATP REM] (hypotheses, no validation)\n" + raw_response[: self.REM_MAX_LEN]
+            return (
+                "[LATP REM] (hypotheses, no validation)\n"
+                + raw_response[: self.REM_MAX_LEN]
+            )
 
         if crystal is None:
             cid = self._extract_crystal_id(history)

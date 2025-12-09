@@ -27,6 +27,7 @@ class ValidationResult:
     is_resonant_collapse: strong self-similarity / self-hypnosis
     requires_swap: hard signal that we should try a different engine
     """
+
     score: float
     reason: str
     is_hallucination: bool = False
@@ -45,6 +46,7 @@ class EngineSpec:
     latp_engine: LATP-wrapped engine instance
     tags: optional labels, e.g. ["code", "cheap"]
     """
+
     name: str
     role: EngineRole
     priority: int
@@ -58,7 +60,8 @@ class OrchestratorContext:
     High-level hints for routing.
     This is intentionally minimal for v1.0.
     """
-    domain: Optional[str] = None          # e.g. "code", "math", "law"
+
+    domain: Optional[str] = None  # e.g. "code", "math", "law"
     max_latency_ms: Optional[int] = None
     max_cost_level: Optional[str] = None  # e.g. "low", "medium", "high"
     user_id: Optional[str] = None
@@ -74,16 +77,14 @@ class RoutingPolicy(Protocol):
         engine: EngineSpec,
         validation: ValidationResult,
         ctx: OrchestratorContext | None,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     def choose_backup(
         self,
         engines: List[EngineSpec],
         reason: str,
         ctx: OrchestratorContext | None,
-    ) -> Optional[EngineSpec]:
-        ...
+    ) -> Optional[EngineSpec]: ...
 
 
 class SimpleRoutingPolicy:
@@ -137,8 +138,7 @@ class AnswerValidator(Protocol):
         engine: EngineSpec,
         history: List[Dict],
         draft_answer: str,
-    ) -> ValidationResult:
-        ...
+    ) -> ValidationResult: ...
 
 
 class LatpScorerValidator:
@@ -176,9 +176,9 @@ class LatpScorerValidator:
         return ValidationResult(
             score=score,
             reason=reason,
-            is_hallucination=False,      # TODO: enrich with real checks
+            is_hallucination=False,  # TODO: enrich with real checks
             is_resonant_collapse=is_resonant,
-            requires_swap=is_resonant,   # heuristic: swap on strong resonance
+            requires_swap=is_resonant,  # heuristic: swap on strong resonance
         )
 
 
@@ -276,6 +276,7 @@ class ModelOrchestrator:
 
 
 # === Minimal example wiring for local testing ===
+
 
 def build_fake_orchestrator() -> ModelOrchestrator:
     """
