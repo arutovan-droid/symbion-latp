@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from .metrics import LATPMetricsLogger
 
 from .ral_module import RalModule
 
@@ -250,80 +251,95 @@ class WatchdogModule:
 
         _ = crystal
         return True, "PASS"
-
-
 class LATP_WrappedEngine:
-    """Runtime wrapper: OS now owns memory and context hygiene."""
+    """Операционная система теперь управляет памятью."""
 
     def __init__(
         self,
         base_model: Any,
         librarium: Any,
-        ral: Optional[RalModule] = None,
+        ral: Any | None = None,
         vector_librarium: Any | None = None,
     ) -> None:
+        """
+        LATP wrapper around a base LLM model.
+
+        - base_model: must implement .generate(history: list[dict]) -> str
+        - librarium: object with .store(...) / .retrieve(id) for crystals
+        - ral: optional RalModule instance for numeric drift detection
+        - vector_librarium: optional VectorLibrarium for lateral shifts
+        """
         self.model = base_model
         self.librarium = librarium
         self.scorer = ContextPoisoningScorer()
-        self.ral = ral
-        self.airlock = AirlockModule(librarium, ral=self.ral)
-        self.sorbet = LateralShiftEngine(
-            librarium_client=librarium,
-            vector_client=vector_librarium,
-        )
+        self.airlock = AirlockModule(librarium_client=librarium, ral=ral)
+        self.sorbet = LateralShiftEngine(librarium_client=librarium)
         self.watchdog = WatchdogModule()
+        self.ral = ral  # RalModule or None
 
     def generate(self, history: List[Dict[str, Any]]) -> str:
-        local_history = list(history)
+        """
+        Единственная точка входа. Все остальные вызовы — приватны.
 
-        if len(local_history) > 0 and len(local_history) % 3 == 0:
+        history — список сообщений вида {"role": "...", "content": "...", "tokens": int?}
+        """
+
+        # Работаем с копией, чтобы не ломать исходный список вызывающего кода
+        local_history: List[Dict[str, Any]] = list(history)
+
+        # ---------------- Фаза 1: Диагностика контекста ----------------
+        if len(local_history) % 3 == 0 and local_history:
             toxicity, diagnosis = self.scorer.score_toxicity(local_history)
 
-            if toxicity > 0.62 or "CRITICAL" in diagnosis:
+            # CRITICAL: срабатывает Airlock (шлюзовая камера)
+            if toxicity > self.scorer.CRITICAL_THRESHOLD or "CRITICAL" in diagnosis:
                 local_history, crystal = self.airlock.sanitize_session(local_history)
                 print(
                     f"[LATP] {diagnosis}. Airlock activated. Crystal: {crystal.entropy_hash}"
                 )
-            elif 0.5 < toxicity <= 0.62:
+
+            # Профилактическая зона: 0.5 < toxicity <= CRITICAL_THRESHOLD
+            elif 0.5 < toxicity <= self.scorer.CRITICAL_THRESHOLD:
                 last_content = local_history[-1].get("content", "")
-                bridge = self.sorbet.generate_bridge(last_content)
+                bridge = self.sorbet.generate_bridge(str(last_content))
                 if bridge:
                     local_history.append(
-                        {"role": "system", "content": f"[LATP Lateral] {bridge}"}
+                        {
+                            "role": "system",
+                            "content": f"[LATP Lateral] {bridge}",
+                        }
                     )
                     print("[LATP] Lateral shift injected.")
 
-        if self.ral:
-            dc = self.ral.digital_crystal_prompt()
-            if dc:
-                if local_history and local_history[0].get("role") == "system":
-                    local_history.insert(1, {"role": "system", "content": dc})
-                else:
-                    local_history.insert(0, {"role": "system", "content": dc})
-
+        # ---------------- Фаза 2: Генерация базовой моделью ----------------
         raw_response = self.model.generate(local_history)
 
-        if self.ral:
+        # RalModule: фиксация чисел и проверка на numeric drift (если подключён)
+        if self.ral is not None:
+            # запоминаем, какие числа модель публично зафиксировала
+            self.ral.ingest_turn("assistant", raw_response)
             drift_q = self.ral.verify_drift(raw_response)
             if drift_q:
-                local_history.append(
-                    {"role": "user", "content": drift_q, "tokens": 0}
-                )
+                # если есть расхождение, задаём уточняющий вопрос и пересчитываем
+                local_history.append({"role": "user", "content": drift_q})
                 raw_response = self.model.generate(local_history)
 
+        # ---------------- Фаза 3: Валидация Watchdog’ом ----------------
+        # Ищем последний тег кристалла в истории
         crystal_tag = next(
             (
-                h
-                for h in local_history
-                if isinstance(h.get("content"), str)
-                and "[LATP Crystal]" in h.get("content", "")
+                m
+                for m in local_history
+                if "[LATP Crystal]" in str(m.get("content", ""))
             ),
             None,
         )
-        if crystal_tag and self.librarium is not None:
+
+        if crystal_tag:
             try:
-                content = crystal_tag["content"]
-                crystal_id = content.split("ID:")[1].split("|")[0].strip()
+                # Формат тега: "[LATP Crystal] ID:<id> | Core: ..."
+                tag_content = str(crystal_tag["content"])
+                crystal_id = tag_content.split("ID:")[1].split("|")[0].strip()
                 crystal = self.librarium.retrieve(crystal_id)
             except Exception:
                 crystal = None
@@ -334,22 +350,25 @@ class LATP_WrappedEngine:
 
         if not is_valid:
             print(f"[LATP] {command}")
-            final = self._fallback_response(local_history, command)
-        else:
-            final = raw_response
+            return self._fallback_response(local_history, command)
 
-        if self.ral:
-            self.ral.ingest_turn("assistant", final)
+        return raw_response
 
-        return final
-
-    def _fallback_response(self, history: List[Dict[str, Any]], reason: str) -> str:
-        _ = history
+    def _fallback_response(
+        self,
+        history: List[Dict[str, Any]],
+        reason: str,
+    ) -> str:
+        """
+        Когда модель провалила валидацию, мы отвечаем сами
+        и просим пользователя переформулировать запрос.
+        """
         return (
             f"[LATP HALT] {reason}\n"
             "Ваша задача: переформулировать вопрос, опираясь на Librarium. "
             "Ключевая ошибка: отход от фактов."
         )
+
 
 
 class FakeModel:
