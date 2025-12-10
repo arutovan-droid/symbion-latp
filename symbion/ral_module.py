@@ -1,4 +1,3 @@
-
 """
 RalModule – "real-number" cooler.
 
@@ -9,9 +8,8 @@ instead of repeating a cached, wrong value.
 
 from __future__ import annotations
 
-import math
 import re
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 # Simplified numeric pattern: integers and decimals with optional comma
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
@@ -26,80 +24,81 @@ class RalModule:
     """
     Numeric watchdog with minimal coupling to LATP.
 
-    It maintains a "digital crystal": a mapping key -> canonical numeric value.
-    Keys are coarse-grained (normalized) representations to allow some tolerance.
+    v1 design (простая и честная):
+
+    - Мы храним просто список чисел, которые модель уже "заявила" как ответ.
+    - Для каждого нового числа ищем самое близкое из кристалла.
+    - Если относительное отличие > rel_threshold (по умолчанию 5%) —
+      считаем это "цифровым дрейфом" и просим модель пересчитать.
     """
 
-    def __init__(self, tolerance: float = 1e-3) -> None:
-        # tolerance for float comparisons
-        self.tolerance = tolerance
-        # digital crystal: key -> canonical value
-        self.crystal: Dict[str, float] = {}
+    def __init__(self, rel_threshold: float = 0.05) -> None:
+        # relative difference threshold: 0.05 = 5% drift
+        self.rel_threshold = rel_threshold
+        # list of canonical numeric values seen in assistant's outputs
+        self._values: List[float] = []
 
     # ---------- public API, to be called from LATP_WrappedEngine ----------
 
     def ingest_turn(self, role: str, text: str) -> None:
         """
-        Scan a new message and update the numeric crystal.
+        Scan a new message and update the numeric "digital crystal".
 
         For v1 we only track assistant outputs: what the model "publicly commits" to.
         """
         if role != "assistant":
             return
 
-        for n in self._extract_numbers(text):
-            key = self._keyify(n)
-            # Last value wins: we assume the most recent, explicitly computed
-            # number is the canonical one.
-            self.crystal[key] = n
+        nums = self._extract_numbers(text)
+        # Append all numbers; duplicates не страшны для простого поиска ближайшего.
+        self._values.extend(nums)
 
     def verify_drift(self, candidate_text: str) -> Optional[str]:
         """
-        Check if candidate_text contains numbers that contradict the crystal.
+        Check if candidate_text contains numbers that contradict the stored crystal.
 
-        If drift is detected, return a "wedge question" that forces the model
-        to recompute the value step by step. If no drift is found, return None.
+        Strategy:
+        - если нет сохранённых чисел — просто выходим;
+        - для каждого числа в candidate_text:
+            * ищем ближайшее число из кристалла;
+            * считаем относительное отличие |n - v| / max(|v|, 1.0);
+            * если > rel_threshold — считаем дрейфом и возвращаем wedge-вопрос.
         """
-        for raw in _NUMBER_RE.findall(candidate_text):
-            n = float(raw.replace(",", "."))
-            key = self._keyify(n)
-            if key in self.crystal:
-                canonical = self.crystal[key]
-                if abs(n - canonical) > self.tolerance:
-                    return self._wedge_question(n, canonical)
+        if not self._values:
+            return None
+
+        nums = self._extract_numbers(candidate_text)
+        if not nums:
+            return None
+
+        for n in nums:
+            closest = min(self._values, key=lambda v: abs(v - n))
+            denom = max(abs(closest), 1.0)
+            rel_diff = abs(n - closest) / denom
+
+            # Небольшие флуктуации игнорируем, ловим только заметный дрейф.
+            if rel_diff >= self.rel_threshold:
+                return self._wedge_question(n, closest)
+
         return None
 
     def digital_crystal_prompt(self) -> str:
         """
         Small fragment that can be injected into the system prompt / context.
 
-        It encodes the digital crystal as plain text, so that after an Airlock
-        reset the model still sees the "sacred numbers" we rely on.
+        For now we simply expose the stored values as a list. This is a heuristic
+        hint for the model, not a strict contract.
         """
-        if not self.crystal:
+        if not self._values:
             return ""
-        lines = [f"{k} = {v}" for k, v in self.crystal.items()]
-        return "[Ral-Crystal]:\n" + "\n".join(lines) + "\n"
+        unique_vals = sorted(set(self._values))
+        lines = [f"- {v}" for v in unique_vals]
+        return "[Ral-Crystal]: known numeric anchors:\n" + "\n".join(lines) + "\n"
 
     # ---------- internals ----------
 
     def _extract_numbers(self, text: str) -> List[float]:
         return [float(x.replace(",", ".")) for x in _NUMBER_RE.findall(text)]
-
-    def _keyify(self, n: float) -> str:
-        """
-        Produce a coarse key for a numeric value.
-
-        For v1 we normalize magnitude and round to ~3 significant digits.
-        This is intentionally simple and may cause collisions – acceptable
-        as a heuristic, TODO for future versions.
-        """
-        if n == 0:
-            return "0"
-        order = int(math.log10(abs(n)))
-        # Normalize to mantissa in [1, 10) and keep 3 significant digits
-        mantissa = n / 10**order
-        return f"{mantissa:.3g}e{order}"
 
     def _wedge_question(self, wrong: float, correct: float) -> str:
         """
