@@ -376,5 +376,25 @@ answer = engine.generate(history)
 print(answer)
 This makes LATP executable with a real storage backend, not just in-memory mocks.
 
+## Numeric Drift Guard (RalModule)
+
+LATP can optionally track numeric drift in long-running sessions via `RalModule`.
+
+```python
+from symbion.latp_core import LATP_WrappedEngine, FakeModel, FakeLibrarium
+from symbion.ral_module import RalModule
+
+engine = LATP_WrappedEngine(
+    base_model=FakeModel(),
+    librarium=FakeLibrarium(),
+    ral=RalModule(),  # numeric drift watchdog
+)
+
+history = [
+    {"role": "user", "content": "Сколько будет 37 * 42?"},
+]
+
+answer = engine.generate(history)
+print(answer)
 
 
