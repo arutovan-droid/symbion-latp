@@ -54,6 +54,44 @@ In long chats, especially when the context window is heavily used (>60%), LLMs t
 LATP is designed to detect and mitigate all four.
 
 
+## Architecture overview
+
+LATP (LUYS Anti-Toxin Protocol) is a **stateful proxy** between the user and a base LLM model.
+
+It does not replace the model; it **controls context, cooling and numeric reality** around it.
+
+Core components:
+
+1. **ContextPoisoningScorer** – estimates toxicity / drift based on history.
+2. **AirlockModule** – compresses long sessions into Crystals and resets the context.
+3. **LateralShiftEngine** – injects lateral prompts from Librarium / VectorLibrarium.
+4. **RalModule** – guards numeric reality (digits, dates, simple arithmetic).
+5. **LATPManager** – state machine: decides when to continue, shift, cool down or airlock.
+
+---
+
+### LATP state machine (high-level)
+
+```mermaid
+stateDiagram-v2
+    [*] --> NORMAL
+
+    NORMAL --> HEAT_UP: entropy ↑ / length ↑
+    NORMAL --> DIGITAL_DRIFT: RalModule mismatch
+    NORMAL --> STABLE: metrics OK
+
+    HEAT_UP --> LATERAL_SHIFT: prophylactic shift
+    HEAT_UP --> COOL_DOWN: summarise & compress
+    HEAT_UP --> AIRLOCK: critical overload
+
+    LATERAL_SHIFT --> COOL_DOWN: shift completed
+    DIGITAL_DRIFT --> REALITY_CHECK: wedge question
+    REALITY_CHECK --> NORMAL: numbers corrected
+
+    COOL_DOWN --> STABLE
+    STABLE --> NORMAL
+
+    AIRLOCK --> NORMAL: start from Crystal
 
 ---
 
@@ -397,4 +435,4 @@ history = [
 answer = engine.generate(history)
 print(answer)
 
-
+See: docs/ARCH-LATP.md
