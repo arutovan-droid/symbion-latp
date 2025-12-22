@@ -473,6 +473,13 @@ In short:
 - Resonance Fabric: *how strongly does this episode align with the canon?*
 - Librarium: *the fabric of all surviving structures.*
 - LATP: *the protocol that decides when and how an episode enters this pipeline.*
+## Examples
 
+See `examples/demo_latp_pipeline.py` for an end-to-end demo:
+
+- LATP-wrapped engine with a MentorModel (teaches instead of doing homework),
+- Distillation Core types (RawInput, Essence),
+- Librarium Core (Crystal, InMemoryLibrariumStore),
+- simple resonance stub deciding what enters the Librarium.
 
 See: docs/ARCH-LATP.md
