@@ -7,11 +7,11 @@ This script shows how several core Symbion modules can interact:
 
 - LATP (from symbion-latp):
     - controls the dialog trajectory,
-    - wraps a base model (FakeModel).
+    - wraps a base model (here: MentorModel, not just a fake echo).
 
 - Distillation Core (from symbion-distillation-core):
     - we reuse its data types: RawInput, Essence,
-    - local DistillationStub produces an Essence in that format.
+    - DistillationStub produces an Essence in that format.
 
 - Librarium Core (from symbion-librarium-core):
     - we use Crystal + InMemoryLibrariumStore,
@@ -25,14 +25,97 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-# LATP engine and fake base model
-from symbion.latp_core import LATP_WrappedEngine, FakeModel, FakeLibrarium
+# LATP engine and local Librarium used internally by LATP
+from symbion.latp_core import LATP_WrappedEngine, FakeLibrarium
 
 # Distillation Core types (conceptual core)
 from symbion_distillation.pipeline import RawInput, Essence as DistilledEssence
 
 # Librarium Core types
 from symbion_librarium import Crystal, InMemoryLibrariumStore
+
+
+# ---------------------------------------------------------------------------
+# MentorModel: replaces the dumb FakeModel in this demo
+# ---------------------------------------------------------------------------
+
+
+class MentorModel:
+    """
+    Simple "mentor" base model for the demo.
+
+    Instead of echoing the last user message, it:
+    - treats cooking queries (borscht) as a culinary coaching session,
+    - treats "write my term paper about qubits" as a teaching moment,
+    - for other queries, asks clarifying questions and tries to raise the intent.
+    """
+
+    def generate(self, history: List[Dict[str, Any]]) -> str:
+        # Find last user message
+        last_user = None
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                last_user = msg.get("content", "")
+                break
+
+        if not last_user:
+            return "Let’s start with one clear question or task from your side."
+
+        text = last_user.strip()
+        low = text.lower()
+
+        # Case 1: borscht / борщ → culinary contract, not just a recipe
+        if "borscht" in low or "борщ" in low:
+            return (
+                "You don’t need another generic internet recipe — "
+                "you need a *ritual-level* borscht.\n\n"
+                "Let me first understand your constraints:\n"
+                "1) What meat do you actually have, and which cut? (e.g. beef shank, brisket, ribs)\n"
+                "2) Is your cabbage fresh or from last year (stored / slightly fermented)?\n"
+                "3) Do you want a weekday version (≤1.5 hours) or a slow Sunday version (3–4 hours)?\n"
+                "4) Is the reference taste more like “grandma village-style” or “restaurant clean-style”?\n"
+                "5) With pampushki or without? Garlic okay or not?\n\n"
+                "Answer these, and I’ll give you a structured cooking plan: broth phase, vegetable phase, "
+                "acid control, and finishing rituals – not just a flat list of steps."
+            )
+
+        # Case 2: term paper / qubits → didactic gate
+        qubits_triggers = [
+            "term paper",
+            "курсов",
+            "кубит",
+            "qubit",
+            "quantum",
+        ]
+        if any(t in low for t in qubits_triggers):
+            return (
+                "You’re asking me to write a term paper about qubits *for you*.\n\n"
+                "Before we even talk about a paper, I want to check your understanding:\n"
+                "1) Can you explain in your own words what a **qubit** is, "
+                "without formulas – just intuition?\n"
+                "2) Do you know at least two differences between a classical bit and a qubit?\n\n"
+                "Very short primer so you don’t answer in the dark:\n"
+                "- A classical bit is either 0 or 1.\n"
+                "- A qubit can be in a superposition of 0 and 1 until measured.\n"
+                "- Measurement collapses it into a classical outcome, but the way we prepare and entangle qubits "
+                "lets us do things impossible for classical bits.\n\n"
+                "Your task now: write 3–5 sentences in your own words about what a qubit is and why it’s *not* "
+                "just “a smaller bit”. After that, I’ll help you structure a real outline for the term paper "
+                "instead of just dumping text."
+            )
+
+        # Fallback: generic mentoring mode
+        return (
+            "Let me not just answer, but help you think.\n\n"
+            f"I see your request:\n> {text}\n\n"
+            "Before I propose anything, tell me:\n"
+            "1) What is your real goal here (one sentence)?\n"
+            "2) What constraints do you have (time, level of depth, prior knowledge)?\n"
+            "3) Do you want me to just give you an answer, or to walk you through the reasoning so "
+            "you can reuse the pattern later?\n\n"
+            "Once you answer these, we can turn this into a clear structure (almost like a PSL contract) "
+            "instead of a one-off reply."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -126,13 +209,7 @@ class LibrariumAdapter:
         return crystal
 
     def list_all(self) -> List[Crystal]:
-        # InMemoryLibrariumStore currently exposes a dictionary internally;
-        # we rely on its find / get methods where appropriate.
-        # For the demo we just collect all known crystals.
-        # Since the reference implementation may evolve, we provide a safe wrapper.
         crystals: List[Crystal] = []
-        # We don't have direct iteration over the internal dict, so we
-        # track by tags: this is only for illustration.
         for tag in ("demo", "latp"):
             for c in self._store.find_crystals_by_tag(tag):
                 if c not in crystals:
@@ -183,7 +260,7 @@ def run_turn(
     """
     One interaction step:
     - append user message,
-    - call LATP-wrapped engine,
+    - call LATP-wrapped engine (with MentorModel inside),
     - append assistant answer,
     - build Episode,
     - run distillation + resonance,
@@ -219,8 +296,8 @@ def run_turn(
     print("USER:")
     print("  ", user_text)
     print()
-    print("LATP + MODEL:")
-    print("  ", answer)
+    print("LATP + MentorModel:")
+    print("  ", answer.replace("\n", "\n  "))
     print()
     print(f"Resonance R = {score.R:.2f} | Librarium candidate = {score.is_librarium_candidate}")
     if essence is not None:
@@ -238,9 +315,9 @@ def run_turn(
 
 
 def main() -> None:
-    # LATP engine with fake model + fake local Librarium (used internally by LATP)
+    # LATP engine with MentorModel as base model
     engine = LATP_WrappedEngine(
-        base_model=FakeModel(),
+        base_model=MentorModel(),
         librarium=FakeLibrarium(),
     )
 
@@ -251,7 +328,7 @@ def main() -> None:
 
     history: List[Dict[str, Any]] = []
 
-    # Demo 1: borscht request (should have some structure)
+    # Demo 1: borscht request (ritual-level cooking, not generic recipe)
     run_turn(
         engine=engine,
         distiller=distiller,
@@ -262,7 +339,7 @@ def main() -> None:
         episode_id="ep-borscht",
     )
 
-    # Demo 2: lazy term-paper request (tests didactic / structural response)
+    # Demo 2: lazy term-paper request (didactic gate for qubits)
     run_turn(
         engine=engine,
         distiller=distiller,
