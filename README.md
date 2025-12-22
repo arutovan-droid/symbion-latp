@@ -437,6 +437,42 @@ print(answer)
 ## License
 
 This project is licensed under the MIT License – see the `LICENSE` file for details.
+## Relation to other Symbion modules
+
+LATP is not “just a dialog manager”.  
+It is the **trajectory engine** that decides *how* an interaction evolves over time and *when* to hand things off to other Symbion subsystems.
+
+In the Symbion Space:
+
+- **Distillation Core (`symbion-distillation-core`)**  
+  The structure still.  
+  Takes any raw text (even trash), distills structural Essence, burns rhetoric and noise.
+
+- **Librarium**  
+  The structural memory plane (the “digital khachkar” fabric).  
+  Stores only distilled structures (Essence), not raw texts.
+
+- **Resonance Fabric (`symbion-resonance-fabric`)**  
+  The scoring layer.  
+  Given an Episode, computes Resonance R and decides:
+  - is this Librarium-worthy?
+  - is this a TVP candidate?
+
+- **LATP (`symbion-latp`)**  
+  Sits **between the user and the base model**, and controls:
+  - when to **heat up** (explore, generate hypotheses),
+  - when to perform **lateral shifts** (frame changes, Librarium-based),
+  - when to **cool down** (summarize, consolidate),
+  - when to **airlock** an episode:
+    - send it to Distillation Core → Essence → Librarium,
+    - send it to Resonance Fabric → R, Librarium / TVP gating.
+
+In short:
+
+- Distillation Core: *what structural content survives the fire?*
+- Resonance Fabric: *how strongly does this episode align with the canon?*
+- Librarium: *the fabric of all surviving structures.*
+- LATP: *the protocol that decides when and how an episode enters this pipeline.*
 
 
 See: docs/ARCH-LATP.md
