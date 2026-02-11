@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import asyncio
+import json
+from symbion_cognitive_collider.collider import route_language
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -53,7 +56,7 @@ class ContextPoisoningScorer:
         self.WINDOW_MAX = model_window
         # above this we consider the session critically poisoned
         self.CRITICAL_THRESHOLD = 0.62
-        # 'sultan zone' — suspiciously high certainty / verbosity
+        # 'sultan zone' Ã¢â‚¬â€ suspiciously high certainty / verbosity
         self.SULTAN_THRESHOLD = 0.31
 
     # ---------------- core helpers ----------------
@@ -64,7 +67,7 @@ class ContextPoisoningScorer:
     def calculate_entropy(self, history: list[dict]) -> float:
         """Crude 'entropy' proxy: how full is the window.
 
-        0.0 → пусто, 1.0 → окно забито под завязку.
+        0.0 Ã¢â€ â€™ ÃÂ¿Ã‘Æ’Ã‘ÂÃ‘â€šÃÂ¾, 1.0 Ã¢â€ â€™ ÃÂ¾ÃÂºÃÂ½ÃÂ¾ ÃÂ·ÃÂ°ÃÂ±ÃÂ¸Ã‘â€šÃÂ¾ ÃÂ¿ÃÂ¾ÃÂ´ ÃÂ·ÃÂ°ÃÂ²Ã‘ÂÃÂ·ÃÂºÃ‘Æ’.
         """
         used = self._total_tokens(history)
         ratio = min(max(used / max(self.WINDOW_MAX, 1), 0.0), 1.0)
@@ -77,11 +80,11 @@ class ContextPoisoningScorer:
         - split by '.'
         - hash each sentence
         - measure how many unique hashes there are
-        - more repetition → higher resonance in [0, 1]
+        - more repetition Ã¢â€ â€™ higher resonance in [0, 1]
         """
         sentences = [s.strip() for s in text.split(".") if s.strip()]
         if len(sentences) < 5:
-            # короткие ответы считаем безопасными
+            # ÃÂºÃÂ¾Ã‘â‚¬ÃÂ¾Ã‘â€šÃÂºÃÂ¸ÃÂµ ÃÂ¾Ã‘â€šÃÂ²ÃÂµÃ‘â€šÃ‘â€¹ Ã‘ÂÃ‘â€¡ÃÂ¸Ã‘â€šÃÂ°ÃÂµÃÂ¼ ÃÂ±ÃÂµÃÂ·ÃÂ¾ÃÂ¿ÃÂ°Ã‘ÂÃÂ½Ã‘â€¹ÃÂ¼ÃÂ¸
             return 0.0
 
         hashes = [
@@ -97,11 +100,11 @@ class ContextPoisoningScorer:
 
         Returns:
             (toxicity, diagnosis)
-            toxicity ∈ [0, 1]
+            toxicity Ã¢Ë†Ë† [0, 1]
         """
         entropy = self.calculate_entropy(history)
 
-        # лёгкая поправка за длину диалога
+        # ÃÂ»Ã‘â€˜ÃÂ³ÃÂºÃÂ°Ã‘Â ÃÂ¿ÃÂ¾ÃÂ¿Ã‘â‚¬ÃÂ°ÃÂ²ÃÂºÃÂ° ÃÂ·ÃÂ° ÃÂ´ÃÂ»ÃÂ¸ÃÂ½Ã‘Æ’ ÃÂ´ÃÂ¸ÃÂ°ÃÂ»ÃÂ¾ÃÂ³ÃÂ°
         turns = len(history)
         length_factor = min(turns / 100.0, 1.0)
 
@@ -185,7 +188,7 @@ class AirlockModule:
             last_message,
         ]
 
-        # If RAL is present, дополнительно подмешиваем цифровой кристалл:
+        # If RAL is present, ÃÂ´ÃÂ¾ÃÂ¿ÃÂ¾ÃÂ»ÃÂ½ÃÂ¸Ã‘â€šÃÂµÃÂ»Ã‘Å’ÃÂ½ÃÂ¾ ÃÂ¿ÃÂ¾ÃÂ´ÃÂ¼ÃÂµÃ‘Ë†ÃÂ¸ÃÂ²ÃÂ°ÃÂµÃÂ¼ Ã‘â€ ÃÂ¸Ã‘â€žÃ‘â‚¬ÃÂ¾ÃÂ²ÃÂ¾ÃÂ¹ ÃÂºÃ‘â‚¬ÃÂ¸Ã‘ÂÃ‘â€šÃÂ°ÃÂ»ÃÂ»:
         if self.ral is not None and hasattr(self.ral, "digital_crystal_prompt"):
             dc = self.ral.digital_crystal_prompt()
             if dc:
@@ -201,7 +204,7 @@ class AirlockModule:
 
 class LateralShiftEngine:
     """
-    Generates "cognitive sorbet" – lateral prompts based on isomorphic topics.
+    Generates "cognitive sorbet" Ã¢â‚¬â€œ lateral prompts based on isomorphic topics.
     """
 
     def __init__(self, librarium_client: Any | None = None, vector_librarium: Any | None = None) -> None:
@@ -234,17 +237,17 @@ class LateralShiftEngine:
         if iso is None:
             return None
 
-        name = getattr(iso, "name", "другую структуру")
-        arch_type = getattr(iso, "arch_type", "архетип")
-        field = getattr(iso, "field", "другой области")
-        method = getattr(iso, "method", "другим методом")
+        name = getattr(iso, "name", "ÃÂ´Ã‘â‚¬Ã‘Æ’ÃÂ³Ã‘Æ’Ã‘Å½ Ã‘ÂÃ‘â€šÃ‘â‚¬Ã‘Æ’ÃÂºÃ‘â€šÃ‘Æ’Ã‘â‚¬Ã‘Æ’")
+        arch_type = getattr(iso, "arch_type", "ÃÂ°Ã‘â‚¬Ã‘â€¦ÃÂµÃ‘â€šÃÂ¸ÃÂ¿")
+        field = getattr(iso, "field", "ÃÂ´Ã‘â‚¬Ã‘Æ’ÃÂ³ÃÂ¾ÃÂ¹ ÃÂ¾ÃÂ±ÃÂ»ÃÂ°Ã‘ÂÃ‘â€šÃÂ¸")
+        method = getattr(iso, "method", "ÃÂ´Ã‘â‚¬Ã‘Æ’ÃÂ³ÃÂ¸ÃÂ¼ ÃÂ¼ÃÂµÃ‘â€šÃÂ¾ÃÂ´ÃÂ¾ÃÂ¼")
 
         bridge_candidates = [
-            f"Мы рассмотрели {current_topic}. А теперь сравни: {name}. "
-            f"Не повторяй себя. Ищи глубинную аналогию, не поверхностную.",
-            f"Тема {current_topic} имеет архетип {arch_type}. "
-            f"Как этот архетип проявляется в {field}? "
-            f"Дай ответ через призму {method}.",
+            f"ÃÅ“Ã‘â€¹ Ã‘â‚¬ÃÂ°Ã‘ÂÃ‘ÂÃÂ¼ÃÂ¾Ã‘â€šÃ‘â‚¬ÃÂµÃÂ»ÃÂ¸ {current_topic}. ÃÂ Ã‘â€šÃÂµÃÂ¿ÃÂµÃ‘â‚¬Ã‘Å’ Ã‘ÂÃ‘â‚¬ÃÂ°ÃÂ²ÃÂ½ÃÂ¸: {name}. "
+            f"ÃÂÃÂµ ÃÂ¿ÃÂ¾ÃÂ²Ã‘â€šÃÂ¾Ã‘â‚¬Ã‘ÂÃÂ¹ Ã‘ÂÃÂµÃÂ±Ã‘Â. ÃËœÃ‘â€°ÃÂ¸ ÃÂ³ÃÂ»Ã‘Æ’ÃÂ±ÃÂ¸ÃÂ½ÃÂ½Ã‘Æ’Ã‘Å½ ÃÂ°ÃÂ½ÃÂ°ÃÂ»ÃÂ¾ÃÂ³ÃÂ¸Ã‘Å½, ÃÂ½ÃÂµ ÃÂ¿ÃÂ¾ÃÂ²ÃÂµÃ‘â‚¬Ã‘â€¦ÃÂ½ÃÂ¾Ã‘ÂÃ‘â€šÃÂ½Ã‘Æ’Ã‘Å½.",
+            f"ÃÂ¢ÃÂµÃÂ¼ÃÂ° {current_topic} ÃÂ¸ÃÂ¼ÃÂµÃÂµÃ‘â€š ÃÂ°Ã‘â‚¬Ã‘â€¦ÃÂµÃ‘â€šÃÂ¸ÃÂ¿ {arch_type}. "
+            f"ÃÅ¡ÃÂ°ÃÂº Ã‘ÂÃ‘â€šÃÂ¾Ã‘â€š ÃÂ°Ã‘â‚¬Ã‘â€¦ÃÂµÃ‘â€šÃÂ¸ÃÂ¿ ÃÂ¿Ã‘â‚¬ÃÂ¾Ã‘ÂÃÂ²ÃÂ»Ã‘ÂÃÂµÃ‘â€šÃ‘ÂÃ‘Â ÃÂ² {field}? "
+            f"Ãâ€ÃÂ°ÃÂ¹ ÃÂ¾Ã‘â€šÃÂ²ÃÂµÃ‘â€š Ã‘â€¡ÃÂµÃ‘â‚¬ÃÂµÃÂ· ÃÂ¿Ã‘â‚¬ÃÂ¸ÃÂ·ÃÂ¼Ã‘Æ’ {method}.",
         ]
 
         # stable index based on hash
@@ -310,10 +313,10 @@ class FakeLibrarium:
         # Very small stub object with attributes
         class Iso:
             def __init__(self) -> None:
-                self.name = "ДНК"
-                self.arch_type = "иерархическая память"
-                self.field = "биология"
-                self.method = "кода без автора"
+                self.name = "Ãâ€ÃÂÃÅ¡"
+                self.arch_type = "ÃÂ¸ÃÂµÃ‘â‚¬ÃÂ°Ã‘â‚¬Ã‘â€¦ÃÂ¸Ã‘â€¡ÃÂµÃ‘ÂÃÂºÃÂ°Ã‘Â ÃÂ¿ÃÂ°ÃÂ¼Ã‘ÂÃ‘â€šÃ‘Å’"
+                self.field = "ÃÂ±ÃÂ¸ÃÂ¾ÃÂ»ÃÂ¾ÃÂ³ÃÂ¸Ã‘Â"
+                self.method = "ÃÂºÃÂ¾ÃÂ´ÃÂ° ÃÂ±ÃÂµÃÂ· ÃÂ°ÃÂ²Ã‘â€šÃÂ¾Ã‘â‚¬ÃÂ°"
 
         return Iso()
 
@@ -382,6 +385,38 @@ class LATP_WrappedEngine:
                 if bridge:
                     local_history.append({"role": "system", "content": f"[LATP Lateral] {bridge}"})
                     print("[LATP] Lateral shift injected.")
+        # Phase 1.5: basis_select (Cognitive Collider)
+        try:
+            last_user_text = ""
+            for msg in reversed(local_history):
+                if msg.get("role") == "user":
+                    last_user_text = msg.get("content", "") or ""
+                    break
+
+            cog = asyncio.run(
+                route_language(
+                    last_user_text,
+                    {"history": local_history},
+                    life_vector=None,
+                )
+            )
+            cog_dict = cog.model_dump()
+
+            # attach to core session if present
+            if hasattr(self, "core_session") and getattr(self, "core_session", None) is not None:
+                if not hasattr(self.core_session, "context") or self.core_session.context is None:
+                    self.core_session.context = {}
+                self.core_session.context["cog_lang"] = cog_dict
+
+            # also inject into history for downstream visibility
+            local_history.append({
+                "role": "system",
+                "content": "[LATP CogLang] " + json.dumps(cog_dict, ensure_ascii=False),
+                "cog_lang": cog_dict,
+            })
+        except Exception:
+            pass
+
 
         # Phase 2: generation
         raw_response = self.model.generate(local_history)
@@ -417,7 +452,7 @@ class LATP_WrappedEngine:
 
         is_valid, command = self.watchdog.scan(raw_response, crystal_obj)
         if not is_valid:
-            return f"[LATP HALT] {command}\nПереформулируйте вопрос, опираясь на факты."
+            return f"[LATP HALT] {command}\nÃÅ¸ÃÂµÃ‘â‚¬ÃÂµÃ‘â€žÃÂ¾Ã‘â‚¬ÃÂ¼Ã‘Æ’ÃÂ»ÃÂ¸Ã‘â‚¬Ã‘Æ’ÃÂ¹Ã‘â€šÃÂµ ÃÂ²ÃÂ¾ÃÂ¿Ã‘â‚¬ÃÂ¾Ã‘Â, ÃÂ¾ÃÂ¿ÃÂ¸Ã‘â‚¬ÃÂ°Ã‘ÂÃ‘ÂÃ‘Å’ ÃÂ½ÃÂ° Ã‘â€žÃÂ°ÃÂºÃ‘â€šÃ‘â€¹."
 
         # Phase 5: optional metrics logging
         if self.monitor is not None and hasattr(self.monitor, "log_step"):
