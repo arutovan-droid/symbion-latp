@@ -17,11 +17,40 @@ EngineRole = Literal["primary", "backup", "validator", "archivist"]
 
 
 @dataclass
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
+
+
 class ValidationResult:
     """
     Normalized validation result used by the routing policy.
 
-    score: 0.0–1.0 (higher is better)
+    score: 0.0â€“1.0 (higher is better)
     reason: human-readable explanation
     is_hallucination: validator suspects hallucination
     is_resonant_collapse: strong self-similarity / self-hypnosis
@@ -36,6 +65,35 @@ class ValidationResult:
 
 
 @dataclass
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
+
+
 class EngineSpec:
     """
     Static specification of an engine inside the orchestrator.
@@ -55,6 +113,35 @@ class EngineSpec:
 
 
 @dataclass
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
+
+
 class OrchestratorContext:
     """
     High-level hints for routing.
@@ -65,6 +152,35 @@ class OrchestratorContext:
     max_latency_ms: Optional[int] = None
     max_cost_level: Optional[str] = None  # e.g. "low", "medium", "high"
     user_id: Optional[str] = None
+
+
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
 
 
 class RoutingPolicy(Protocol):
@@ -85,6 +201,35 @@ class RoutingPolicy(Protocol):
         reason: str,
         ctx: OrchestratorContext | None,
     ) -> Optional[EngineSpec]: ...
+
+
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
 
 
 class SimpleRoutingPolicy:
@@ -128,6 +273,35 @@ class SimpleRoutingPolicy:
         return backups_sorted[0]
 
 
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
+
+
 class AnswerValidator(Protocol):
     """
     Validator interface: turns a draft answer into a ValidationResult.
@@ -139,6 +313,35 @@ class AnswerValidator(Protocol):
         history: List[Dict],
         draft_answer: str,
     ) -> ValidationResult: ...
+
+
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
 
 
 class LatpScorerValidator:
@@ -180,6 +383,35 @@ class LatpScorerValidator:
             is_resonant_collapse=is_resonant,
             requires_swap=is_resonant,  # heuristic: swap on strong resonance
         )
+
+
+def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
+    # Safe sync wrapper for async route_language(). Runs in a new thread if loop is running.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import threading
+        box: dict = {}
+
+        def _worker():
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                box["cog"] = new_loop.run_until_complete(
+                    route_language(user_text, {"history": history}, life_vector=life_vector)
+                )
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return box.get("cog")
+
+    return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
 
 
 class ModelOrchestrator:
@@ -244,6 +476,25 @@ class ModelOrchestrator:
         # Ensure we have a primary engine selected
         if self.active_engine.role != "primary":
             self.active_engine = self._select_primary_engine()
+        # Phase 0.5: Orchestrator basis_select (Cognitive Collider)
+        try:
+            cog = _run_collider_sync(user_query, full_history, life_vector=None)
+            if cog is not None:
+                cog_dict = cog.model_dump()
+                # attach to ctx dynamically (no hard dependency on OrchestratorContext schema)
+                try:
+                    ctx.cog_lang = cog_dict
+                except Exception:
+                    pass
+
+                full_history.append({
+                    "role": "system",
+                    "content": "[Orchestrator CogLang] " + json.dumps(cog_dict, ensure_ascii=False),
+                    "cog_lang": cog_dict,
+                })
+        except Exception:
+            pass
+
 
         # Phase 1: draft answer from active engine
         draft_answer = self.active_engine.latp_engine.generate(full_history)
