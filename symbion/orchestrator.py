@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Protocol, Literal
+import asyncio
+import json
+from symbion_cognitive_collider.collider import route_language
 
 from .latp_core import (
     LATP_WrappedEngine,
@@ -152,6 +155,7 @@ class OrchestratorContext:
     max_latency_ms: Optional[int] = None
     max_cost_level: Optional[str] = None  # e.g. "low", "medium", "high"
     user_id: Optional[str] = None
+    cog_lang: dict | None = None
 
 
 def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | None):
