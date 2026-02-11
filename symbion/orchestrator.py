@@ -48,6 +48,7 @@ def _run_collider_sync(user_text: str, history: list[dict], life_vector: dict | 
     return asyncio.run(route_language(user_text, {"history": history}, life_vector=life_vector))
 
 
+@dataclass
 class ValidationResult:
     """
     Normalized validation result used by the routing policy.
@@ -66,6 +67,7 @@ class ValidationResult:
     requires_swap: bool = False
 
 
+@dataclass
 class EngineSpec:
     """
     Static specification of an engine inside the orchestrator.
@@ -84,6 +86,7 @@ class EngineSpec:
     tags: List[str] | None = None
 
 
+@dataclass
 class OrchestratorContext:
     """
     High-level hints for routing.
